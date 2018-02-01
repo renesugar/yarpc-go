@@ -73,6 +73,14 @@ func (p *httpPeer) isAvailable() bool {
 	return false
 }
 
+func (p *httpPeer) OnSuspect() {
+	// Kick the state change channel (if it hasn't been kicked already).
+	select {
+	case p.changed <- struct{}{}:
+	default:
+	}
+}
+
 func (p *httpPeer) OnDisconnected() {
 	p.Peer.SetStatus(peer.Unavailable)
 
@@ -98,7 +106,6 @@ func (p *httpPeer) MaintainConn() {
 	// Attempt to retain an open connection to each peer so long as it is
 	// retained.
 	for {
-		p.Peer.SetStatus(peer.Connecting)
 		if p.isAvailable() {
 			p.Peer.SetStatus(peer.Available)
 			// Reset on success
