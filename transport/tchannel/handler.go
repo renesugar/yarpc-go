@@ -94,6 +94,11 @@ func (h handler) handle(ctx context.Context, call inboundCall) {
 	responseWriter := newResponseWriter(call.Response(), call.Format())
 
 	err := h.callHandler(ctx, call, responseWriter)
+	if _codeToTChannelCode[yarpcerrors.FromError(err).Code()] == tchannel.ErrCodeBusy {
+		// black-hole requests on busy errors
+		// all TChannel clients will timeout instead of receiving the error
+		return
+	}
 	if err != nil && !responseWriter.isApplicationError {
 		// TODO: log error
 		_ = call.Response().SendSystemError(getSystemError(err))
