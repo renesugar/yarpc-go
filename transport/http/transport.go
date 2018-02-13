@@ -165,7 +165,7 @@ func ConnBackoff(s backoffapi.Strategy) TransportOption {
 
 // InnocenceWindow is the duration after the peer connection management loop
 // will suspend suspicion for a peer after successfully checking whether the
-// peer is live with a fresh TCP connection to that peer.
+// peer is live with a fresh TCP connection.
 //
 // The default innocence window is 5 seconds.
 //
