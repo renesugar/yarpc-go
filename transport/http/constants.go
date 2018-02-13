@@ -26,6 +26,8 @@ const transportName = "http"
 
 var defaultConnTimeout = 500 * time.Millisecond
 
+var defaultInnocenceWindow = 5 * time.Second
+
 // HTTP headers used in requests and responses to send YARPC metadata.
 const (
 	// Name of the service sending the request. This corresponds to the

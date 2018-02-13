@@ -24,6 +24,7 @@ import (
 	"net"
 	"time"
 
+	"go.uber.org/atomic"
 	"go.uber.org/yarpc/api/peer"
 	"go.uber.org/yarpc/peer/hostport"
 )
@@ -31,11 +32,12 @@ import (
 type httpPeer struct {
 	*hostport.Peer
 
-	transport *Transport
-	addr      string
-	changed   chan struct{}
-	released  chan struct{}
-	timer     *time.Timer
+	transport             *Transport
+	addr                  string
+	changed               chan struct{}
+	released              chan struct{}
+	timer                 *time.Timer
+	innocentUntilUnixNano *atomic.Int64
 }
 
 func newPeer(pid hostport.PeerIdentifier, t *Transport) *httpPeer {
@@ -52,6 +54,7 @@ func newPeer(pid hostport.PeerIdentifier, t *Transport) *httpPeer {
 		changed:   make(chan struct{}, 1),
 		released:  make(chan struct{}, 0),
 		timer:     timer,
+		innocentUntilUnixNano: atomic.NewInt64(0),
 	}
 }
 
@@ -74,7 +77,22 @@ func (p *httpPeer) isAvailable() bool {
 }
 
 func (p *httpPeer) OnSuspect() {
+	now := time.Now().UnixNano()
+	innocentUntil := p.innocentUntilUnixNano.Load()
+
+	// Do not check for connectivity after every request timeout.
+	// Spread them out so they only occur once in every innocence window.
+	if now < innocentUntil {
+		return
+	}
+
+	// Extend the window of innocence from the current time.
+	// Use Store instead of CAS since races at worst extend the innocence
+	// window to relatively similar distant times.
+	p.innocentUntilUnixNano.Store(now + defaultInnocenceWindow.Nanoseconds())
+
 	// Kick the state change channel (if it hasn't been kicked already).
+	// But leave status as available.
 	select {
 	case p.changed <- struct{}{}:
 	default:
