@@ -94,10 +94,16 @@ func (h handler) handle(ctx context.Context, call inboundCall) {
 	responseWriter := newResponseWriter(call.Response(), call.Format())
 
 	err := h.callHandler(ctx, call, responseWriter)
-	if _codeToTChannelCode[yarpcerrors.FromError(err).Code()] == tchannel.ErrCodeBusy {
-		// black-hole requests on busy errors
-		// all TChannel clients will timeout instead of receiving the error
-		return
+
+	// black-hole requests on busy errors
+	if yarpcerrors.FromError(err).Code() == yarpcerrors.CodeResourceExhausted {
+		if tchCall, ok := call.(tchannelCall); ok {
+			// all TChannel clients will timeout instead of receiving an error
+			tchCall.InboundCall.Response().Blackhole()
+			return
+		}
+		// if we do not get the tchannelCall object, we'll fall back to replying
+		// with a busy error
 	}
 	if err != nil && !responseWriter.isApplicationError {
 		// TODO: log error
