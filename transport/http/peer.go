@@ -45,6 +45,9 @@ func newPeer(pid hostport.PeerIdentifier, t *Transport) *httpPeer {
 	// Create a defused timer for later use.
 	timer := time.NewTimer(0)
 	if !timer.Stop() {
+		// not reachable, but if the timer wins the race, it would mean
+		// deadlock later, so best to conditionally drain the channel just in
+		// that case.
 		<-timer.C
 	}
 
