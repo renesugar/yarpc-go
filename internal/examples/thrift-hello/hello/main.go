@@ -31,13 +31,26 @@ import (
 	"time"
 
 	"go.uber.org/yarpc"
+	apipeer "go.uber.org/yarpc/api/peer"
 	"go.uber.org/yarpc/internal/examples/thrift-hello/hello/echo"
 	"go.uber.org/yarpc/internal/examples/thrift-hello/hello/echo/helloclient"
 	"go.uber.org/yarpc/internal/examples/thrift-hello/hello/echo/helloserver"
+	"go.uber.org/yarpc/peer"
+	"go.uber.org/yarpc/peer/hostport"
+	"go.uber.org/yarpc/peer/pendingheap"
+	"go.uber.org/yarpc/peer/roundrobin"
 	"go.uber.org/yarpc/transport/http"
 )
 
+var count int
+
 var flagWait = flag.Bool("wait", false, "Wait for a signal to exit")
+
+var flagRR = flag.Bool("round-robin", false, "Use round-robin instead of fewest-pending-requests load balancer")
+
+func init() {
+	flag.IntVar(&count, "count", 1, "How many requests to send, or -1 to run indefinitely")
+}
 
 func main() {
 	if err := do(); err != nil {
@@ -47,18 +60,35 @@ func main() {
 
 func do() error {
 	flag.Parse()
-	// configure a YARPC dispatcher for the service "hello",
+	// Configure a YARPC dispatcher for the service "hello",
 	// expose the service over an HTTP inbound on port 8086,
 	// and configure outbound calls to service "hello" over HTTP port 8086 as well
 	http := http.NewTransport()
+
+	// Choose a load balancer (peer list)
+	var pl apipeer.ChooserList
+	if *flagRR {
+		pl = roundrobin.New(http)
+	} else {
+		pl = pendingheap.New(http)
+	}
+
+	// Bind the peer list to a peer list updater (static peers), making the
+	// peer chooser.
+	pc := peer.Bind(pl, peer.BindPeers([]apipeer.Identifier{
+		hostport.Identify("127.0.0.1:8086"),
+		hostport.Identify("127.0.0.2:8086"),
+		hostport.Identify("127.0.0.3:8086"),
+	}))
+
 	dispatcher := yarpc.NewDispatcher(yarpc.Config{
 		Name: "hello",
 		Inbounds: yarpc.Inbounds{
-			http.NewInbound("127.0.0.1:8086"),
+			http.NewInbound(":8086"),
 		},
 		Outbounds: yarpc.Outbounds{
 			"hello": {
-				Unary: http.NewSingleOutbound("http://127.0.0.1:8086"),
+				Unary: http.NewOutbound(pc),
 			},
 		},
 	})
@@ -78,16 +108,21 @@ func do() error {
 	// using the dispatcher and associated "hello" outbound
 	client := helloclient.New(dispatcher.ClientConfig("hello"))
 
-	// build a context with a 1 second deadline
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	for i := 0; i != count; i++ {
+		// build a context with a 1 second deadline
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 
-	// use the Thrift client to call the Echo procedure using YARPC
-	res, err := client.Echo(ctx, &echo.EchoRequest{Message: "Hello world", Count: 1})
-	if err != nil {
-		return err
+		// use the Thrift client to call the Echo procedure using YARPC
+		res, err := client.Echo(ctx, &echo.EchoRequest{Message: "Hello world", Count: 1})
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(res)
+		}
+
+		cancel()
+		time.Sleep(100 * time.Millisecond)
 	}
-	fmt.Println(res)
 
 	if *flagWait {
 		// Gracefully shut down if we receive an interrupt (^C) or a kill signal.
