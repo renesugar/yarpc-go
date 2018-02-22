@@ -105,7 +105,7 @@ func (p *httpPeer) OnSuspect() {
 }
 
 func (p *httpPeer) OnDisconnected() {
-	p.Peer.SetStatus(peer.Unavailable)
+	p.Peer.SetStatus(peer.Connecting)
 
 	// Kick the state change channel (if it hasn't been kicked already).
 	select {
@@ -128,7 +128,11 @@ func (p *httpPeer) MaintainConn() {
 
 	// Attempt to retain an open connection to each peer so long as it is
 	// retained.
+	p.Peer.SetStatus(peer.Connecting)
 	for {
+		// Invariant: Status is Connecting initially, or after exponential
+		// back-off, or after OnDisconnected, but still Available after
+		// OnSuspect.
 		if p.isAvailable() {
 			p.Peer.SetStatus(peer.Available)
 			// Reset on success
@@ -136,6 +140,8 @@ func (p *httpPeer) MaintainConn() {
 			if !p.waitForChange() {
 				break
 			}
+			// Invariant: the status is Connecting if change is triggered by
+			// OnDisconnected, but remains Available if triggered by OnSuspect.
 		} else {
 			p.Peer.SetStatus(peer.Unavailable)
 			// Back-off on fail
@@ -143,6 +149,7 @@ func (p *httpPeer) MaintainConn() {
 				break
 			}
 			attempts++
+			p.Peer.SetStatus(peer.Connecting)
 		}
 	}
 	p.Peer.SetStatus(peer.Unavailable)
