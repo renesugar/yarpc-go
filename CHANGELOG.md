@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   accept Thrift requests with or without envelopes.  This feature was
   originally added in 1.26.0 and removed in 1.26.1 because the implementation
   introduced an inbound request data corruption hazard.
+- Add methods to start and stop a dispatcher's transports, inbounds, and
+  outbounds separately.
 
 ## [1.27.2] - 2017-01-23
 ### Fixed
